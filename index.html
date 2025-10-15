@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Magnetic Lab — تفاعل ثلاثي الأبعاد (Flasted-like)</title>
+
+  <!-- Fonts and small reset -->
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --bg1:#03040a;
+      --bg2:#071021;
+      --panel: rgba(255,255,255,0.04);
+      --muted:#9fb0c6;
+      --accent:#3ad1ff;
+      --accent2:#ffd36e;
+      --glass: rgba(255,255,255,0.04);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:'Cairo',system-ui,Arial;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:#e7f6ff}
+    .root{height:100vh;display:flex;flex-direction:column}
+    header{height:64px;display:flex;align-items:center;gap:12px;padding:0 18px;border-bottom:1px solid rgba(255,255,255,0.03)}
+    header h1{font-size:16px;margin:0;font-weight:800}
+    main{flex:1;display:flex;gap:12px;padding:12px;overflow:hidden}
+    /* canvas area */
+    .scene-wrap{flex:1;position:relative;border-radius:12px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.5)}
+    canvas{display:block;width:100%;height:100%}
+    /* overlay HUD */
+    .hud{position:absolute;left:14px;top:14px;background:linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.25));padding:10px;border-radius:8px;backdrop-filter:blur(6px);min-width:220px}
+    .hud h2{margin:0;font-size:14px}
+    .hud p{margin:6px 0 0 0;font-size:12px;color:var(--muted)}
+    .controls{width:360px;display:flex;flex-direction:column;gap:12px;overflow:auto}
+    .panel{background:var(--panel);padding:12px;border-radius:10px}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input[type=range]{width:100%}
+    input[type=number], select{width:100%;padding:8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:#fff}
+    .row{display:flex;gap:8px}
+    button{padding:10px;border-radius:8px;border:none;background:linear-gradient(90deg,var(--accent),#6ce5ff);color:#041827;font-weight:700}
+    .muted{color:#bcd8ef;font-size:13px}
+    .log{max-height:220px;overflow:auto;background:rgba(255,255,255,0.02);padding:8px;border-radius:6px;font-size:13px}
+    .small{font-size:12px;color:var(--muted)}
+    footer{height:48px;border-top:1px solid rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-size:13px;color:var(--muted)}
+    /* responsive */
+    @media (max-width:900px){
+      main{padding:8px}
+      .controls{width:320px}
+    }
+    @media (max-width:720px){
+      .controls{display:none}
+      .hud{left:10px;right:10px}
+    }
+  </style>
+</head>
+<body>
+  <div class="root">
+    <header>
+      <h1>Magnetic Lab — محاكاة المجال و الفيض (3D Interactive)</h1>
+      <div style="margin-left:auto;font-size:13px;color:var(--muted)">Dark · Touch-friendly · Numerical Biot–Savart</div>
+    </header>
+
+    <main>
+      <div class="scene-wrap" id="canvasContainer">
+        <!-- HUD -->
+        <div class="hud" id="hud">
+          <h2 id="hudTitle">السلك المستقيم</h2>
+          <p id="hudSubtitle">اضغط في أي مكان على السطح لقياس B (Biot–Savart numeric)</p>
+        </div>
+
+        <!-- WebGL canvas will be appended by script -->
+      </div>
+
+      <aside class="controls">
+        <div class="panel">
+          <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
+            <div>
+              <div class="small" style="font-weight:700">الوضع</div>
+              <select id="modeSelect">
+                <option value="wire">سلك مستقيم (Wire)</option>
+                <option value="loop">حلقة دائرية (Loop)</option>
+                <option value="solenoid">سولينويد (Solenoid)</option>
+              </select>
+            </div>
+
+            <div style="width:120px">
+              <div class="small" style="font-weight:700">Camera</div>
+              <select id="camPreset">
+                <option value="default">Default</option>
+                <option value="top">Top</option>
+                <option value="side">Side</option>
+                <option value="front">Front</option>
+              </select>
+            </div>
+          </div>
+
+          <hr style="border:none;height:8px">
+
+          <label>شدة التيار I (A)</label>
+          <input id="Irange" type="range" min="-10" max="10" step="0.1" value="1" />
+          <div class="row">
+            <input id="Inum" type="number" value="1.0" step="0.1" />
+            <button id="reverseBtn">عكس</button>
+            <div style="flex:1"></div>
+          </div>
+
+          <div style="height:8px"></div>
+
+          <label>طول السلك (m)</label>
+          <input id="wireLengthRange" type="range" min="1" max="20" step="0.1" value="8" />
+          <input id="wireLengthNum" type="number" value="8.0" step="0.1" />
+
+          <div style="height:8px"></div>
+
+          <label>نصف قطر الحلقة R (m)</label>
+          <input id="loopRrange" type="range" min="0.05" max="2.0" step="0.01" value="0.6" />
+          <input id="loopRnum" type="number" value="0.6" step="0.01" />
+
+          <div style="height:8px"></div>
+
+          <label>سولينويد — نصف القطر R (m)</label>
+          <input id="solRrange" type="range" min="0.05" max="1.5" step="0.01" value="0.45" />
+          <input id="solRnum" type="number" value="0.45" step="0.01" />
+
+          <label style="margin-top:8px">عدد اللفات N</label>
+          <input id="solNrange" type="range" min="1" max="400" step="1" value="40" />
+          <input id="solNnum" type="number" value="40" step="1" />
+
+          <label style="margin-top:8px">طول السولينويد L (m)</label>
+          <input id="solLrange" type="range" min="0.05" max="5" step="0.01" value="1.0" />
+          <input id="solLnum" type="number" value="1.0" step="0.01" />
+
+          <div style="height:8px"></div>
+
+          <label>Integration segments (Biot–Savart)</label>
+          <input id="segRange" type="range" min="16" max="1024" step="8" value="240" />
+          <input id="segNum" type="number" value="240" step="8" />
+
+          <div style="height:8px"></div>
+
+          <div style="display:flex;gap:8px">
+            <label style="flex:1"><input type="checkbox" id="showField" checked/> إظهار أنابيب المجال</label>
+            <label style="flex:1"><input type="checkbox" id="showArrows" checked/> إظهار الأسهم</label>
+          </div>
+
+          <div style="height:8px"></div>
+          <div style="display:flex;gap:8px">
+            <button id="downloadCSV">تنزيل CSV</button>
+            <button id="screenshotBtn">صورة</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3 style="margin:0">شرح مُتحقَّق</h3>
+          <div class="small muted" style="margin-top:8px">
+            <strong>السلك:</strong> B(r) = μ₀ I / (2π r).<br/>
+            <strong>الحلقة:</strong> Bₓ = μ₀ I R² / (2 (R² + x²)^(3/2)).<br/>
+            <strong>السولينويد:</strong> B ≈ μ₀ (N/L) I داخل السولينويد.<br/>
+            <div style="margin-top:6px;color:#c7eaff">المحاكاة تقدم أيضاً حساب عددي للحقل باستخدام Biot–Savart (اختياري للدقة).</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h4 style="margin:0">سجل القياسات</h4>
+          <div id="log" class="log">لا قياسات بعد — اضغط على السطح للتجربة.</div>
+        </div>
+      </aside>
+    </main>
+
+    <footer>
+      <div>تم الإنشاء بواسطة Magnetic Lab — دروس فيزياء تالتة ث/الفصل الثاني</div>
+      <div class="small">Click/Tap on ground to probe · Use camera to orbit</div>
+    </footer>
+  </div>
+
+  <!-- libraries -->
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.152.2/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.152.2/examples/jsm/controls/OrbitControls.js';
+    import { TubeGeometry } from 'https://unpkg.com/three@0.152.2/examples/jsm/geometries/TubeGeometry.js';
+    import gsap from 'https://cdn.jsdelivr.net/npm/gsap@3.12.2/index.min.js';
+
+    /* ========= Scene setup ========= */
+    const container = document.getElementById('canvasContainer');
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x071021);
+
+    const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.01, 200);
+    camera.position.set(0, 2.6, 7);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.56);
+    scene.add(ambient);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+    dir.position.set(6, 10, 6);
+    scene.add(dir);
+
+    /* ========= Constants & helpers ========= */
+    const MU0 = 4 * Math.PI * 1e-7;
+    const getEl=(id)=>document.getElementById(id);
+    const logEl = getEl('log');
+    const hudTitle = getEl('hudTitle');
+    const hudSubtitle = getEl('hudSubtitle');
+
+    // UI elements
+    const modeSelect = getEl('modeSelect');
+    const Irange = getEl('Irange'), Inum = getEl('Inum'), reverseBtn = getEl('reverseBtn');
+    const wireLengthRange = getEl('wireLengthRange'), wireLengthNum = getEl('wireLengthNum');
+    const loopRrange = getEl('loopRrange'), loopRnum = getEl('loopRnum');
+    const solRrange = getEl('solRrange'), solRnum = getEl('solRnum');
+    const solNrange = getEl('solNrange'), solNnum = getEl('solNnum');
+    const solLrange = getEl('solLrange'), solLnum = getEl('solLnum');
+    const segRange = getEl('segRange'), segNum = getEl('segNum');
+    const showField = getEl('showField'), showArrows = getEl('showArrows');
+    const downloadCSV = getEl('downloadCSV'), screenshotBtn = getEl('screenshotBtn');
+    const modeCamera = getEl('camPreset');
+
+    // sync helpers
+    function bindRange(range, num){
+      range.addEventListener('input', ()=>{ num.value = range.value; updateScene(); });
+      num.addEventListener('change', ()=>{ range.value = num.value; updateScene(); });
+    }
+    bindRange(Irange, Inum);
+    bindRange(wireLengthRange, wireLengthNum);
+    bindRange(loopRrange, loopRnum);
+    bindRange(solRrange, solRnum);
+    bindRange(solNrange, solNnum);
+    bindRange(solLrange, solLnum);
+    bindRange(segRange, segNum);
+
+    reverseBtn.addEventListener('click', ()=>{ Inum.value = (parseFloat(Inum.value)||0)*-1; Inum.dispatchEvent(new Event('change')); });
+
+    /* ========= Scene objects (wire / loop / solenoid) ========= */
+    const root = new THREE.Group(); scene.add(root);
+
+    // wire
+    const wireMaterial = new THREE.MeshStandardMaterial({ color: 0xd86d6d, metalness:0.55, roughness:0.25 });
+    const wireMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,8,48), wireMaterial);
+    root.add(wireMesh);
+
+    // loop
+    let loopMesh = null;
+    function createLoop(R){
+      if(loopMesh){ root.remove(loopMesh); loopMesh.geometry.dispose(); loopMesh.material.dispose(); loopMesh=null; }
+      const g = new THREE.TorusGeometry(R, 0.03, 16, 128);
+      const m = new THREE.MeshStandardMaterial({ color: 0xbff1b0, metalness:0.36, roughness:0.34 });
+      loopMesh = new THREE.Mesh(g,m); loopMesh.rotation.x = Math.PI/2; root.add(loopMesh);
+    }
+
+    // solenoid
+    let solGroup = null;
+    function createSolenoid(R,N,L){
+      if(solGroup){ solGroup.children.forEach(c=>{ c.geometry.dispose(); c.material.dispose(); }); root.remove(solGroup); solGroup=null; }
+      solGroup = new THREE.Group(); solGroup.position.set(0,-L/2,0);
+      const gap = L / Math.max(1, N-1);
+      for(let i=0;i<N;i++){
+        const g = new THREE.TorusGeometry(R, 0.012, 8, 64);
+        const m = new THREE.MeshStandardMaterial({ color: 0x8fb8ff, metalness:0.18, roughness:0.58 });
+        const mesh = new THREE.Mesh(g,m); mesh.rotation.x = Math.PI/2; mesh.position.y = i*gap;
+        solGroup.add(mesh);
+      }
+      root.add(solGroup);
+    }
+
+    // flux plane (for visualization)
+    const fluxPlane = new THREE.Mesh(new THREE.PlaneGeometry(3.4,3.4), new THREE.MeshStandardMaterial({ color:0xffd27a, transparent:true, opacity:0.12 }));
+    fluxPlane.rotation.x = -Math.PI/2; root.add(fluxPlane);
+
+    // field tubes and arrows groups
+    const fieldGroup = new THREE.Group(); root.add(fieldGroup);
+    const arrowsGroup = new THREE.Group(); root.add(arrowsGroup);
+
+    function clearGroup(gr){
+      while(gr.children.length){
+        const c=gr.children.pop();
+        c.geometry && c.geometry.dispose();
+        c.material && c.material.dispose();
+      }
+    }
+
+    /* ======== Visual helpers: curves & tubes ======== */
+    class CircleCurve extends THREE.Curve {
+      constructor(radius=1,y=0){ super(); this.radius=radius; this.y=y; }
+      getPoint(t){ const ang=t*Math.PI*2; return new THREE.Vector3(Math.cos(ang)*this.radius, this.y, Math.sin(ang)*this.radius); }
+    }
+    class LoopBulgeCurve extends THREE.Curve {
+      constructor(radius=0.6,phase=0){ super(); this.radius=radius; this.phase=phase; }
+      getPoint(t){ const ang=t*Math.PI*2; const x=Math.cos(ang)*this.radius*(1+0.06*Math.sin(ang+this.phase)); const y=0.18*Math.sin(ang*2+this.phase); const z=Math.sin(ang)*this.radius*(0.6+0.04*Math.cos(ang+this.phase)); return new THREE.Vector3(x,y,z); }
+    }
+
+    function buildColoredTube(curve, tubularSegments, radius, scalarFn){
+      // build tube geometry (TubeGeometry class is available via import)
+      const geometry = new TubeGeometry(curve, tubularSegments, radius, 8, true);
+      const pos = geometry.attributes.position;
+      const colors = new Float32Array(pos.count*3);
+      for(let i=0;i<pos.count;i++){
+        const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
+        const s = Math.max(0, Math.min(1, scalarFn(new THREE.Vector3(x,y,z))));
+        const col = new THREE.Color();
+        const hue = Math.max(0, 0.66 - 0.66*s);
+        col.setHSL(hue, 0.85, 0.5);
+        colors[i*3]=col.r; colors[i*3+1]=col.g; colors[i*3+2]=col.b;
+      }
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors,3));
+      const mat = new THREE.MeshStandardMaterial({ vertexColors:true, side:THREE.DoubleSide, metalness:0.12, roughness:0.4 });
+      const mesh = new THREE.Mesh(geometry, mat);
+      return mesh;
+    }
+
+    function rebuildArrows(radius=1.6,count=12,current=1){
+      arrowsGroup.clear();
+      for(let a=0;a<count;a++){
+        const t=(a/count)*Math.PI*2; const x=Math.cos(t)*radius; const z=Math.sin(t)*radius; const nx=-Math.sin(t); const nz=Math.cos(t);
+        const fx=x, fy=0, fz=z; const tx=x+nx*0.22, tz=z+nz*0.22;
+        const dir=[tx-fx,0,tz-fz]; const len=Math.hypot(dir[0],dir[2])||0.0001;
+        const mid=[(fx+tx)/2,0,(fz+tz)/2]; const angle=Math.atan2(dir[2],dir[0]);
+        const g=new THREE.Group(); g.position.set(mid[0],mid[1],mid[2]); g.rotation.y=-angle;
+        const cyl=new THREE.Mesh(new THREE.CylinderGeometry(0.0065,0.0065,len*0.9,6), new THREE.MeshStandardMaterial({ color: current>=0?0x9ef0ff:0xffb3b3 }));
+        const cone=new THREE.Mesh(new THREE.ConeGeometry(0.028,0.05,8), new THREE.MeshStandardMaterial({ color: current>=0?0x8fe8ff:0xff7a7a }));
+        cyl.rotation.x=Math.PI/2; cone.rotation.x=Math.PI/2; cone.position.z=len*0.45;
+        g.add(cyl); g.add(cone); arrowsGroup.add(g);
+      }
+    }
+
+    /* ======== Physics calculators (analytic + numeric) ======== */
+    function B_wire_analytic(I, pt){
+      const r = Math.sqrt(pt.x*pt.x + pt.z*pt.z);
+      const safe = Math.max(r, 1e-6);
+      const Bmag = Math.abs(MU0 * I / (2*Math.PI*safe));
+      // direction tangential: along phi (around Y)
+      const phi = Math.atan2(pt.z, pt.x);
+      const dir = new THREE.Vector3(-Math.sin(phi), 0, Math.cos(phi)); // unit tangent
+      return { B: Bmag, dir };
+    }
+    function B_loop_axis_analytic(I, R, x){ // x = distance along axis (y-axis in our geometry)
+      return Math.abs((MU0 * I * R*R) / (2 * Math.pow(R*R + x*x, 1.5)));
+    }
+    function B_solenoid_analytic(I, N, L){ const n = N/Math.max(L,1e-6); return Math.abs(MU0 * n * I); }
+
+    // Biot-Savart numeric for polyline segments
+    function biotSavartSegments(I, points, evalPoint){
+      const B = new THREE.Vector3(0,0,0);
+      const coef = MU0 * I / (4 * Math.PI);
+      for(let i=0;i<points.length-1;i++){
+        const a = points[i], b = points[i+1];
+        const dl = new THREE.Vector3().subVectors(b, a);
+        const r = new THREE.Vector3().subVectors(evalPoint, a);
+        const rlen = r.length();
+        if(rlen < 1e-9) continue;
+        const cross = new THREE.Vector3().crossVectors(dl, r);
+        // using dl x r / r^3 approximated
+        B.addScaledVector(cross, coef / Math.pow(rlen, 3));
+      }
+      return B;
+    }
+
+    function buildLoopPath(R, segments){
+      const pts = [];
+      for(let i=0;i<segments;i++){
+        const t=(i/segments)*Math.PI*2;
+        pts.push(new THREE.Vector3(Math.cos(t)*R, 0, Math.sin(t)*R));
+      }
+      pts.push(pts[0].clone());
+      return pts;
+    }
+
+    function buildSolenoidPaths(R,N,L, segPerLoop){
+      const loops=[];
+      const spacing = L / Math.max(1, N-1);
+      for(let k=0;k<N;k++){
+        const y = -L/2 + k*spacing;
+        const pts=[];
+        for(let i=0;i<segPerLoop;i++){
+          const t=(i/segPerLoop)*Math.PI*2;
+          pts.push(new THREE.Vector3(Math.cos(t)*R, y, Math.sin(t)*R));
+        }
+        pts.push(pts[0].clone());
+        loops.push(pts);
+      }
+      return loops;
+    }
+
+    /* ======== Interaction: probe on ground y=0 ======== */
+    const ray = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const probeLog = []; // store measurements
+
+    renderer.domElement.addEventListener('pointerdown', (ev)=>{
+      // get normalized coords
+      const rect = renderer.domElement.getBoundingClientRect();
+      const x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+      mouse.set(x,y);
+      ray.setFromCamera(mouse, camera);
+      const plane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+      const pt = new THREE.Vector3();
+      ray.ray.intersectPlane(plane, pt);
+      if(pt){
+        measureAtPoint(pt);
+      }
+    });
+
+    function measureAtPoint(pt){
+      const mode = modeSelect.value;
+      const I = parseFloat(Inum.value) || 0;
+      const segments = parseInt(segNum.value) || 120;
+      let Bvec = new THREE.Vector3(0,0,0);
+      if(mode==='wire'){
+        // discretize finite straight wire along Y from -L/2 to L/2 into M segments
+        const L = parseFloat(wireLengthNum.value);
+        const M = Math.min(Math.max(Math.floor(segments/6), 48), 1000);
+        const pts = [];
+        for(let i=0;i<=M;i++){ const y=-L/2 + (i/M)*L; pts.push(new THREE.Vector3(0,y,0)); }
+        Bvec = biotSavartSegments(I, pts, pt);
+      } else if(mode==='loop'){
+        const R = parseFloat(loopRnum.value);
+        const segs = Math.max(64, Math.floor(segments));
+        const loopPts = buildLoopPath(R, segs);
+        Bvec = biotSavartSegments(I, loopPts, pt);
+      } else if(mode==='solenoid'){
+        const R = parseFloat(solRnum.value), N=parseInt(solNnum.value), Ls=parseFloat(solLnum.value);
+        const segPerLoop = Math.max(24, Math.floor(segments/Math.max(1, Math.floor(N/4))));
+        const loops = buildSolenoidPaths(R, N, Ls, segPerLoop);
+        for(const loop of loops){ Bvec.add(biotSavartSegments(I, loop, pt)); }
+      }
+      const Bmag = Bvec.length();
+      const row = { time: new Date().toISOString(), x:pt.x.toFixed(4), y:pt.y.toFixed(4), z:pt.z.toFixed(4), mode:mode, I:Inum.value, B:Bmag };
+      probeLog.unshift(row);
+      if(probeLog.length>300) probeLog.pop();
+      updateLogUI();
+      pulseMarker(pt, Bmag);
+    }
+
+    function pulseMarker(pos, B){
+      // show small sphere at pos and fade it
+      const s = Math.min(0.18, 0.02 + Math.log10(1 + B*1e6)*0.02);
+      const mat = new THREE.MeshStandardMaterial({ color:0xffd36e, transparent:true, opacity:0.95});
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.02,s), 12, 12), mat);
+      mesh.position.copy(pos);
+      scene.add(mesh);
+      gsap.to(mesh.material, { opacity:0, duration:1.4, ease:'power2.out', onComplete:()=>{ mesh.geometry.dispose(); mesh.material.dispose(); scene.remove(mesh); }});
+      gsap.to(mesh.scale, { x:1.6, y:1.6, z:1.6, duration:1.4, ease:'power2.out' });
+    }
+
+    function updateLogUI(){
+      const last = probeLog[0];
+      if(last){
+        getEl('last') && (getEl('last').textContent = `B ≈ ${Number(last.B).toExponential(3)} T @ (${last.x},${last.y},${last.z})`);
+      }
+      logEl.innerHTML = probeLog.slice(0,60).map(r => `<div style="padding:8px 0;border-bottom:1px dashed rgba(255,255,255,0.03)"><div style="font-weight:700">${r.time.split('T')[1].split('.')[0]}</div><div class="small">Mode: ${r.mode} • I=${r.I} A</div><div style="margin-top:6px">B ≈ ${Number(r.B).toExponential(3)} T</div></div>`).join('');
+    }
+
+    // CSV & screenshot
+    downloadCSV.addEventListener('click', ()=>{
+      if(probeLog.length===0){ alert('لا توجد قياسات للتنزيل'); return; }
+      const header = ['time','x','y','z','mode','I','B'];
+      const rows = probeLog.map(r => [r.time,r.x,r.y,r.z,r.mode,r.I,r.B]);
+      const csv = [header, ...rows].map(r=>r.join(',')).join('\n');
+      const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='magnetic_probe.csv'; a.click(); URL.revokeObjectURL(url);
+    });
+
+    screenshotBtn.addEventListener('click', ()=>{
+      renderer.domElement.toBlob((blob)=>{
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href=url; a.download='magnetic_snapshot.png'; a.click(); URL.revokeObjectURL(url);
+      });
+    });
+
+    /* ======== Color maps for tubes (visual scaling heuristics) ======== */
+    function colorMapWire(pt,I){
+      const r = Math.sqrt(pt.x*pt.x + pt.z*pt.z);
+      const b = Math.abs(MU0 * I / (2*Math.PI*Math.max(r,1e-6)));
+      const scale = Math.abs(I) * 1e-6;
+      return Math.min(1, b / Math.max(scale, 1e-12));
+    }
+    function colorMapLoop(pt,I,R){
+      const b = Math.abs((MU0 * I * R * R) / (2 * Math.pow(R*R + pt.y*pt.y, 1.5)));
+      const scale = Math.abs(I) * 6e-7;
+      return Math.min(1, b / Math.max(scale, 1e-12));
+    }
+    function colorMapSol(pt,I,R,N,L){
+      const inside = Math.abs(pt.y) <= L/2 && (pt.x*pt.x + pt.z*pt.z) <= R*R;
+      const b = inside ? Math.abs(MU0 * (N/Math.max(L,1e-6)) * I) : Math.abs(MU0 * (N/Math.max(L,1e-6)) * I)*0.08;
+      const scale = Math.abs(I) * 5e-7;
+      return Math.min(1, b / Math.max(scale, 1e-12));
+    }
+
+    /* ======== Rebuild scene visuals based on UI ======== */
+    function updateScene(){
+      const mode = modeSelect.value;
+      const I = parseFloat(Inum.value) || 0;
+      const wireLen = parseFloat(wireLengthNum.value);
+      const loopR = parseFloat(loopRnum.value);
+      const solR = parseFloat(solRnum.value);
+      const solN = parseInt(solNnum.value);
+      const solL = parseFloat(solLnum.value);
+      const segments = parseInt(segNum.value) || 240;
+
+      // visibility & creation
+      wireMesh.visible = (mode==='wire');
+      // update wire length
+      wireMesh.geometry.dispose();
+      wireMesh.geometry = new THREE.CylinderGeometry(0.06,0.06,wireLen,48);
+
+      if(mode==='loop'){ createLoop(loopR); loopMesh.visible=true; } else loopMesh && (loopMesh.visible=false);
+      if(mode==='solenoid'){ createSolenoid(solR, solN, solL); solGroup && (solGroup.visible=true); } else solGroup && (solGroup.visible=false);
+
+      // flux plane visible
+      fluxPlane.visible = getEl('showField').checked ? true : false; // reuse as visual toggle
+
+      // rebuild field tubes
+      clearGroup(fieldGroup);
+      if(showField.checked){
+        if(mode==='wire'){
+          const nField=10;
+          for(let i=0;i<nField;i++){
+            const r=(i+1)/nField * 2.6 + 0.08;
+            const curve = new CircleCurve(r, 0);
+            const tube = buildColoredTube(curve, 140, 0.02 + (i/nField)*0.008, (pt)=>colorMapWire(pt,I));
+            fieldGroup.add(tube);
+          }
+        } else if(mode==='loop'){
+          for(let i=0;i<10;i++){
+            const curve = new LoopBulgeCurve(loopR + i*0.06, i*0.4);
+            const tube = buildColoredTube(curve, Math.max(80, segments), 0.018 + (i/10)*0.01, (pt)=>colorMapLoop(pt,I,loopR));
+            fieldGroup.add(tube);
+          }
+        } else if(mode==='solenoid'){
+          const count = Math.min(18, Math.max(6, Math.floor(10)));
+          for(let i=0;i<count;i++){
+            const angle=(i/count)*Math.PI*2; const x=Math.cos(angle)*solR*0.5; const z=Math.sin(angle)*solR*0.5;
+            const curve = new (class extends THREE.Curve { getPoint(t){ const y=-solL/2 + t*solL; return new THREE.Vector3(x,y,z); }})();
+            const tube = buildColoredTube(curve, Math.max(36, Math.floor(segments/Math.max(4, Math.floor(solN/6)))), 0.012 + (i/count)*0.006, (pt)=>colorMapSol(pt,I,solR,solN,solL));
+            fieldGroup.add(tube);
+          }
+        }
+      }
+
+      // arrows
+      arrowsGroup.visible = showArrows.checked;
+      rebuildArrows(1.6, 14, I);
+
+      // HUD text update
+      hudTitle.textContent = mode==='wire' ? 'السلك المستقيم' : (mode==='loop' ? 'الحلقة الدائرية' : 'السولينويد');
+      hudSubtitle.textContent = `I = ${I} A • Segments = ${segments}`;
+
+      // animate subtle camera or elements for Flasted-like feel
+      gsap.to(root.rotation, { y: 0.02 * Math.sin(Date.now()/2000), duration: 1.8, ease:'sine.inOut' });
+    }
+
+    // initial update
+    updateScene();
+
+    // camera presets
+    modeCamera.addEventListener('change', ()=>{
+      const v = modeCamera.value;
+      if(v==='default'){ gsap.to(camera.position, { x:0, y:2.6, z:7, duration:0.9 }); }
+      if(v==='top'){ gsap.to(camera.position, { x:0, y:9, z:0.01, duration:0.9 }); }
+      if(v==='side'){ gsap.to(camera.position, { x:8, y:2.6, z:0.1, duration:0.9 }); }
+      if(v==='front'){ gsap.to(camera.position, { x:0, y:2.6, z:7, duration:0.9 }); }
+    });
+
+    // connect other listeners
+    [modeSelect, Inum, wireLengthNum, loopRnum, solRnum, solNnum, solLnum, segNum, showField, showArrows].forEach(el=>{
+      el.addEventListener('change', updateScene);
+    });
+
+    // handle resize
+    window.addEventListener('resize', ()=>{ renderer.setSize(container.clientWidth, container.clientHeight); camera.aspect = container.clientWidth / container.clientHeight; camera.updateProjectionMatrix(); });
+
+    // subtle cursor parallax (touch-friendly)
+    let pointer = {x:0,y:0};
+    window.addEventListener('mousemove',(e)=>{ pointer.x = (e.clientX / window.innerWidth - 0.5) * 0.6; pointer.y = (e.clientY / window.innerHeight - 0.5) * 0.15; });
+    window.addEventListener('touchmove',(e)=>{ if(e.touches && e.touches[0]){ const t=e.touches[0]; pointer.x = (t.clientX / window.innerWidth - 0.5) * 0.6; pointer.y = (t.clientY / window.innerHeight - 0.5) * 0.15; } }, {passive:true});
+
+    /* ========= Render loop ========= */
+    function animate(){
+      requestAnimationFrame(animate);
+      // gentle motion: rotate fieldGroup slowly based on time and pointer
+      fieldGroup.rotation.y += 0.002 + 0.002 * Math.sin(Date.now()/2000);
+      root.rotation.x += (pointer.y - root.rotation.x) * 0.02;
+      root.rotation.y += (pointer.x - root.rotation.y) * 0.02;
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // expose for debugging
+    window.MagneticLab = { scene, camera, renderer, updateScene, probeLog };
+
+    // small accessibility: keyboard shortcuts
+    window.addEventListener('keydown', (e)=>{
+      if(e.key === '1') modeSelect.value='wire';
+      if(e.key === '2') modeSelect.value='loop';
+      if(e.key === '3') modeSelect.value='solenoid';
+      modeSelect.dispatchEvent(new Event('change'));
+    });
+
+    // initial gentle intro animation with GSAP
+    gsap.from('.hud', { y:-20, opacity:0, duration:0.8, ease:'power2.out' });
+
+  </script>
+</body>
+</html>
